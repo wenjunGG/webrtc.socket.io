@@ -1,0 +1,303 @@
+<!doctype html>
+<html>
+
+<head>
+    <title>Socket.IO Notification</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font: 13px Helvetica, Arial;
+        }
+        /* form {
+            background: #000;
+            padding: 3px;
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+        }
+        
+        form input {
+            border: 0;
+            padding: 10px;
+            width: 90%;
+            margin-right: .5%;
+        }
+        
+        form button {
+            width: 9%;
+            background: rgb(130, 224, 255);
+            border: none;
+            padding: 10px;
+        }
+        
+        #messages {
+            list-style-type: none;
+            margin: 0;
+            padding: 0;
+        }
+        
+        #messages li {
+            padding: 5px 10px;
+        }
+        
+        #messages li:nth-child(odd) {
+            background: #eee;
+        } */
+    </style>
+</head>
+
+<body>
+    <ul id="messages"></ul>
+
+    <input id="m" autocomplete="off" /><button id="sendmsg">Send</button>
+
+    <h1>视频</h1>
+    <div id="videoCanvas" style="width:100%">
+        <video id="localvideo" autoplay playsinline style="width: 300px;"></video>
+        <video id="remotevideo" autoplay playsinline style="width: 300px;"></video>
+    </div>
+
+    <script type="text/javascript" src="/socket.io/socket.io.js"></script>
+    <!-- <script src="http://code.jquery.com/jquery-1.11.1.js"></script> -->
+    <script type="text/javascript" src="/jquery.js"></script>
+    <script>
+        var peerConn;
+        var dataChannel;
+        var isInitiator;
+        var localStream;
+        var typeVideo;
+
+        var localvideo = document.getElementById("localvideo");
+        var remotevideo = document.getElementById("remotevideo");
+
+
+        let socket = io();
+
+        var configuration = {
+            "iceServers": [
+                //     {
+                //     'urls': 'stun:stun.stunprotocol.org:3478'
+                // }, {
+                //     'urls': 'stun:stun.l.google.com:19302'
+                // }
+            ]
+        };
+
+        //初始化
+        socket.emit('joined', 1001);
+
+        //创建
+        socket.on('created', function(room, clientId) {
+            console.log('Created room', room, '- my client ID is', clientId);
+            isInitiator = true;
+            typeVideo = "local";
+            grabWebCamVideo();
+        });
+
+        //joined
+        socket.on('joined', function(room, clientId) {
+            console.log('This peer has joined room', room, 'with client ID', clientId);
+            isInitiator = false;
+            typeVideo = "remote";
+            grabWebCamVideo();
+        });
+
+        //准备工作
+        socket.on('ready', function() {
+            console.log('Socket is ready');
+            createPeerConnection(isInitiator, configuration);
+        });
+
+        //socket 消息接收
+        socket.on('message', function(message) {
+            console.log(message)
+            debugger;
+            var signal = JSON.parse(message);
+            if (signal.sdp) {
+                peerConn.setRemoteDescription(new RTCSessionDescription(signal.sdp)).then(function() {
+                    // Only create answers in response to offers
+                    if (signal.sdp.type == 'offer') {
+                        peerConn.createAnswer().then(onLocalSessionCreated).catch(errorHandler);
+                    }
+                }).catch(errorHandler);
+            } else if (signal.ice) {
+                peerConn.addIceCandidate(new RTCIceCandidate(signal.ice)).catch(errorHandler);
+            }
+        })
+
+        //消息管道
+        function createPeerConnection(isInitiator, config) {
+            console.log('Creating Peer connection as initiator?', isInitiator, 'config:',
+                config);
+
+
+            peerConn = new RTCPeerConnection(config);
+
+            // send any ice candidates to the other peer
+            peerConn.onicecandidate = function(event) {
+                debugger;
+                // console.log('icecandidate event:', event);
+                // if (event.candidate) {
+                //     sendMessage({
+                //         type: 'candidate',
+                //         label: event.candidate.sdpMLineIndex,
+                //         id: event.candidate.sdpMid,
+                //         candidate: event.candidate.candidate
+                //     });
+                // } else {
+                //     console.log('End of candidates.');
+                // }
+                if (event.candidate != null) {
+                    sendMessage(JSON.stringify({
+                        'ice': event.candidate,
+                    }));
+                }
+            };
+
+            peerConn.ontrack = gotRemoteStream;
+            peerConn.addStream(localStream);
+
+            if (isInitiator) {
+                console.log('Creating Data Channel');
+                dataChannel = peerConn.createDataChannel('photos');
+                onDataChannelCreated(dataChannel);
+
+                console.log('Creating an offer');
+                peerConn.createOffer(onLocalSessionCreated, errorHandler);
+            } else {
+                peerConn.ondatachannel = function(event) {
+                    console.log('ondatachannel:', event.channel);
+                    dataChannel = event.channel;
+                    onDataChannelCreated(dataChannel);
+                };
+            }
+        }
+
+        //消息管道
+        function onDataChannelCreated(channel) {
+            console.log('onDataChannelCreated:', channel);
+
+            channel.onopen = function() {
+                console.log('CHANNEL opened!!!');
+
+            };
+
+            channel.onclose = function() {
+                console.log('Channel closed.');
+            }
+
+            channel.onmessage = receiveDataChromeFactory();
+            // (adapter.browserDetails.browser === 'firefox') ?
+            //     receiveDataFirefoxFactory() : receiveDataChromeFactory();
+        }
+
+        //消息管道 消息接受
+        function receiveDataChromeFactory() {
+            var buf, count;
+
+            return function onmessage(event) {
+                console.log('接受消息:', event.data);
+                notice(event.data);
+            };
+        }
+
+        //消息管道 消息接受
+        function receiveDataFirefoxFactory() {
+            var count, total, parts;
+
+            return function onmessage(event) {
+                console.log('接受消息:', event.data)
+            };
+        }
+
+        //create offer 本地描述
+        function onLocalSessionCreated(desc) {
+            console.log('local session created:', desc);
+            peerConn.setLocalDescription(desc, function() {
+                console.log('sending local desc:', peerConn.localDescription);
+                //sendMessage(peerConn.localDescription);
+                sendMessage(JSON.stringify({
+                    'sdp': peerConn.localDescription
+                }));
+            }, errorHandler);
+        }
+
+        //远程摄像头
+        function gotRemoteStream(event) {
+            console.log('got remote stream');
+            remotevideo.srcObject = event.streams[0];
+
+            remotevideo.onloadedmetadata = function() {
+
+            };
+        }
+
+        //socket.io 发送消息
+        function sendMessage(message) {
+            console.log('Client sending message: ', message);
+            socket.emit('message', message);
+        }
+
+        //本地摄像头
+        function grabWebCamVideo() {
+            console.log('Getting user media (video) ...');
+            navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: true
+                })
+                .then(gotStream)
+                .catch(function(e) {
+                    alert('getUserMedia() error: ' + e.name);
+                });
+        }
+
+        function gotStream(stream) {
+            console.log('getUserMedia video stream URL:', stream);
+            localStream = stream; // stream available to console
+            localvideo.srcObject = stream;
+            localvideo.onloadedmetadata = function() {
+                switch (typeVideo) {
+                    case 'local':
+                        break;
+                    case 'remote':
+                        socket.emit('ready', 1001);
+                        break;
+                }
+            };
+
+        }
+
+        //打印错误
+        function errorHandler(error) {
+            console.log(error);
+        }
+
+        /** 消息推送***/
+        $('#sendmsg').click(function() {
+            dataChannel.send($('#m').val());
+            $('#m').val('');
+        });
+
+
+        Notification.requestPermission(function(permission) {});
+
+        function notice(msg) {
+            let _notification = new Notification(`消息通知`, {
+                body: `${msg}`,
+                icon: 'http://localhost:8080/23539868.jpg'
+            });
+
+            setTimeout(function() {
+                _notification.close(); //设置5秒后自动关闭通知框
+            }, 5000);
+
+        }
+    </script>
+</body>
+
+</html>
