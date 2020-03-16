@@ -75,8 +75,8 @@
         var localvideo = document.getElementById("localvideo");
         var remotevideo = document.getElementById("remotevideo");
 
-
-        let socket = io();
+        //'http://ali.server.devzhou.cn:3000'
+        let socket = io.connect('https://192.168.1.108:5051');
 
         var configuration = {
             "iceServers": [

@@ -1,7 +1,15 @@
 let express = require('express'),
     app = express(),
-    http = require('http').Server(app),
-    io = require('socket.io')(http);
+    fs = require('fs');
+
+const serverConfig = {
+    key: fs.readFileSync('key.pem'),
+    cert: fs.readFileSync('cert.pem'),
+};
+
+
+let https = require('https').createServer(serverConfig, app),
+    io = require('socket.io')(https);
 
 app.use(express.static(__dirname + '/public'));
 
@@ -49,9 +57,8 @@ io.on('connection', function(socket) {
         io.sockets.in(room).emit('ready', room);
     });
 
-
 });
 
-http.listen(8080, function() {
-    console.log('listening on port 8080');
+https.listen(5051, '192.168.1.108', function() {
+    console.log(' https listening on port 5051');
 })
