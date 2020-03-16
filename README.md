@@ -20,6 +20,7 @@ open the browser and visit https://localhost:8080/
 
 ### WebRTC之PeerConnection的建立过程
 ![截图](https://images2015.cnblogs.com/blog/778894/201601/778894-20160105185733668-1519668935.png)
+
 注意：两边createPeerconnection 可以同时建立，只用建立一个数据传输管道，可以根据不同参数控制
 
 ### 环境搭建
@@ -59,7 +60,7 @@ https.listen(8080, function() {
 
 ### 基于websocket 建立 webrtc链接
 
-
+ websocket (https://github.com/wenjunGG/webrtc.websocket)
 
 ### 参考链接
 
